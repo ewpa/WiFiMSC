@@ -14,6 +14,8 @@ void loop(){}
 #include "USBMSC.h"
 #include "ssh_exec.h"
 #include "ipc.h"
+#include "cache.h"
+#include "esp32-hal-psram.h"
 
 #if ARDUINO_USB_CDC_ON_BOOT
 #define HWSerial Serial0
@@ -33,14 +35,20 @@ struct ipc_msg msg;
 #define README_CONTENTS "This is tinyusb's MassStorage Class demo.\r\n\r\nIf you find any bugs or get any questions, feel free to file an\r\nissue at github.com/hathach/tinyusb"
 
 static int32_t onWrite(uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_t bufsize){
-  //HWSerial.printf("%%MSC WRITE: lba: %u, offset: %u, bufsize: %u\r\n", lba, offset, bufsize);
+  //HWSerial.printf("%%MSC-WRITE lba=%u offset=%u bufsize=%u\r\n", lba, offset, bufsize);
   assert(!offset);
   assert(!(bufsize%DISK_SECTOR_SIZE));
+
+  //HWSerial.printf(
+  //  "%%MEM fheap=%u lrg=%u lwm=%u fps=%u\r\n", xPortGetFreeHeapSize(),
+  //  heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT),
+  //  xPortGetMinimumEverFreeHeapSize(), ESP.getFreePsram());
 
   size_t b, r, total = 0; 
   while (total < bufsize)
   {
-    if (bufsize - total > sizeof msg.data) b = sizeof msg.data; else b = bufsize - total;
+    if (bufsize - total > sizeof msg.data) b = sizeof msg.data;
+    else b = bufsize - total;
     msg.host_cmd = USB_WRITE;
     msg.secsz = DISK_SECTOR_SIZE;
     msg.lba = lba;
@@ -48,44 +56,69 @@ static int32_t onWrite(uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_t 
     memcpy(msg.data, buffer + total, b);
     //HWSerial.printf("%%IPC MSC Signalling SSH\r\n");
     xMessageBufferSend(usb_to_ssh, &msg, sizeof msg, portMAX_DELAY);
-
     //HWSerial.printf("%%IPC MSC Wait for SSH signal start %d\r\n", ipc_num);
     r = xMessageBufferReceive(ssh_to_usb, &msg, sizeof msg, portMAX_DELAY);
     //HWSerial.printf("%%IPC MSC Wait for SSH signal finish %d, sz=%d\r\n", ipc_num++, r); ipc_num++;
+
     total += b;
   }
+
+  for (int l = bufsize/DISK_SECTOR_SIZE - 1; l >= 0; l--)
+    put_cache_block(lba + l, buffer + DISK_SECTOR_SIZE * l);
 
   return bufsize;
 }
 
 static int32_t onRead(uint32_t lba, uint32_t offset, void* buffer, uint32_t bufsize){
-  //HWSerial.printf("%%MSC READ: lba: %u, offset: %u, bufsize: %u\r\n", lba, offset, bufsize);
+  //HWSerial.printf("%%MSC-READ lba=%u offset=%u bufsize=%u\r\n", lba, offset, bufsize);
   assert(!offset);
   assert(!(bufsize%DISK_SECTOR_SIZE));
+
+  //HWSerial.printf(
+  //  "%%MEM fheap=%u lrg=%u lwm=%u fps=%u\r\n", xPortGetFreeHeapSize(),
+  //  heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT),
+  //  xPortGetMinimumEverFreeHeapSize(), ESP.getFreePsram());
+
+  bool allCached = true; void *data = NULL;
+  for (int l = 0; l < bufsize/DISK_SECTOR_SIZE; l++)
+  {
+    data = get_cache_block(lba + l);
+    if (!data) allCached = false;
+    else memcpy(buffer + l * DISK_SECTOR_SIZE, data, DISK_SECTOR_SIZE);
+  }
 
   size_t b, r, total = 0; 
   while (total < bufsize)
   {
-    if (bufsize - total > sizeof msg.data) b = sizeof msg.data; else b = bufsize - total;
-    msg.host_cmd = USB_READ;
-    msg.secsz = DISK_SECTOR_SIZE;
-    msg.lba = lba;
-    msg.dlen = b;
-    //HWSerial.printf("%%IPC MSC Signalling SSH\r\n");
-    xMessageBufferSend(usb_to_ssh, &msg, sizeof msg, portMAX_DELAY);
+    if (bufsize - total > sizeof msg.data) b = sizeof msg.data;
+    else b = bufsize - total;
 
-    //HWSerial.printf("%%IPC MSC Wait for SSH signal start %d\r\n", ipc_num);
-    r = xMessageBufferReceive(ssh_to_usb, &msg, sizeof msg, portMAX_DELAY);
-    //HWSerial.printf("%%IPC MSC Wait for SSH signal finish %d, sz=%d\r\n", ipc_num++, r); ipc_num++;
-    memcpy(buffer + total, msg.data, b);
+    if (!allCached)
+    {
+      msg.host_cmd = USB_READ;
+      msg.secsz = DISK_SECTOR_SIZE;
+      msg.lba = lba;
+      msg.dlen = b;
+      //HWSerial.printf("%%IPC MSC Signalling SSH\r\n");
+      xMessageBufferSend(usb_to_ssh, &msg, sizeof msg, portMAX_DELAY);
+      //HWSerial.printf("%%IPC MSC Wait for SSH signal start %d\r\n", ipc_num);
+      r = xMessageBufferReceive(ssh_to_usb, &msg, sizeof msg, portMAX_DELAY);
+      //HWSerial.printf("%%IPC MSC Wait for SSH signal finish %d, sz=%d\r\n", ipc_num++, r); ipc_num++;
+      memcpy(buffer + total, msg.data, b);
+    }
     total += b;
   }
+
+  if (!allCached)
+    for (int l = bufsize/DISK_SECTOR_SIZE - 1; l >= 0; l--)
+      if (!get_cache_block(lba + l))
+        put_cache_block(lba + l, buffer + DISK_SECTOR_SIZE * l);
 
   return bufsize;
 }
 
 static bool onStartStop(uint8_t power_condition, bool start, bool load_eject){
-  HWSerial.printf("%%MSC START/STOP: power: %u, start: %u, eject: %u\r\n", power_condition, start, load_eject);
+  HWSerial.printf("%%MSC-START/STOP power=%u start=%u eject=%u\r\n", power_condition, start, load_eject);
   return true;
 }
 
@@ -100,7 +133,8 @@ static void usbEventCallback(void* arg, esp_event_base_t event_base, int32_t eve
         HWSerial.println("%USB UNPLUGGED");
         break;
       case ARDUINO_USB_SUSPEND_EVENT:
-        HWSerial.printf("%%USB SUSPENDED: remote_wakeup_en: %u\r\n", data->suspend.remote_wakeup_en);
+        HWSerial.printf("%%USB SUSPENDED remote_wakeup_en=%u\r\n",
+          data->suspend.remote_wakeup_en);
         break;
       case ARDUINO_USB_RESUME_EVENT:
         HWSerial.println("%USB RESUMED");
@@ -137,12 +171,21 @@ void setup() {
   HWSerial.begin(115200);
   HWSerial.setDebugOutput(true);
 
+  if (psramInit()) HWSerial.println("%CFG PSRAM found and enabled");
   init_comms_and_sync();
+  uint16_t cached_sectors = init_cache(DISK_SECTOR_SIZE, DISK_SECTOR_COUNT);
+  if (cached_sectors)
+    HWSerial.printf("%%MEM-CACHE sectors=%u bytes=%u\r\n", cached_sectors,
+      cached_sectors * DISK_SECTOR_SIZE);
+  HWSerial.printf(
+    "%%MEM fheap=%u lrg=%u lwm=%u fps=%u\r\n", xPortGetFreeHeapSize(),
+    heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT),
+    xPortGetMinimumEverFreeHeapSize(), ESP.getFreePsram());
 
   USB.onEvent(usbEventCallback);
   MSC.vendorID("Ewan.CC");//max 8 chars
   MSC.productID("WiFi.MSC");//max 16 chars
-  MSC.productRevision("000A");//max 4 chars
+  MSC.productRevision("000C");//max 4 chars
   MSC.onStartStop(onStartStop);
   MSC.onRead(onRead);
   MSC.onWrite(onWrite);

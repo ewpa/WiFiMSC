@@ -57,7 +57,7 @@ void createFile(char *fileName, unsigned char *buffer, size_t len)
   File fDest = SPIFFS.open(fileName, "w");
   size_t w = fDest.write(buffer, len);
   fDest.close();
-  HWSerial.printf("%%CFG Created file=%s length=%d.\r\n", fileName, w);
+  HWSerial.printf("%%CFG-CREATE file=%s length=%d.\r\n", fileName, w);
 }
 
 /*

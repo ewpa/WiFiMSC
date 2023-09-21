@@ -1,5 +1,5 @@
-WiFi.MSC  A USB device to securely access storage over SSH
-==========================================================
+WiFi.MSC – A USB device to securely access storage over SSH
+===========================================================
 
 Summary
 -------
@@ -25,16 +25,19 @@ Cloud storage accessed from anywhere over a cellular WiFi hotspot.
 
 Limitations
 -----------
-Slower than local storage.  Speed measured to be about 61 kB/s on an
-ESP32-S3 and slightly slower on an ESP32-S2.
+Slower than local storage.  Cached data transfer speed reaches 980 kB/s
+on the ESP32-S3 and 580 kB/s and higher for the ESP32-S2.
+Network speed measured to be about 61 kB/s on an ESP32-S3 and slightly
+slower on an ESP32-S2.
 No error checking implemented (yet).  Needs WiFi and SSH access when
 started and without interruption.
 Single storage profile hard-coded into device firmware.  To change the
 profile the SPIFFS (or entire flash) must be wiped and the firmware
 rebuilt and re-flashed.
+SPIFFS code on the ESP32-S2 is currently unreliable, leading to
+occasional SSH key loss.
 No status/activity feedback or user interface.
 No Ethernet support.
-No caching implemented (yet).
 Memory is tight on the ESP32-S2.
 
 Configuration
@@ -49,8 +52,9 @@ If not already present, copy your SSH key to the remote SSH server, e.g.
 using ```ssh-copy-id -i```.
 Build and uploaded the firmware using ```arduino-cli``` or
 ```arduino-ide```.
+Enable PSRAM first if you want caching.
 
-Using
+Usage
 -----
 Plug the device into any USB host (e.g. PC).
 It will take a few seconds to connect to WiFi and create a session
