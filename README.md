@@ -34,8 +34,6 @@ started and without interruption.
 Single storage profile hard-coded into device firmware.  To change the
 profile the SPIFFS (or entire flash) must be wiped and the firmware
 rebuilt and re-flashed.
-SPIFFS code on the ESP32-S2 is currently unreliable, leading to
-occasional SSH key loss.
 No status/activity feedback or user interface.
 No Ethernet support.
 Memory is tight on the ESP32-S2.

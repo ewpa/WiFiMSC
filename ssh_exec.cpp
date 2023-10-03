@@ -550,6 +550,8 @@ void controlTask(void *pvParameter)
       SPIFFS.begin();
       createFile("/.ssh/known_hosts", SERVER_HASH, SERVER_HASH_LEN);
       createFile("/.ssh/id_ed25519", ID, ID_LEN);
+      // On the ESP32-S2 (not S3) the following is required to write SPIFFS.
+      SPIFFS.end(); SPIFFS.begin();
     }
   }
   if (!fsGood)

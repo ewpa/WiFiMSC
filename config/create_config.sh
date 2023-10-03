@@ -37,6 +37,13 @@ if [ ! -f SERVER ]; then
   rm -f SERVER_HASH
 fi
 
+if [ -f SERVER_HASH ]; then
+  if [ $(date -r SERVER_HASH +%s) -lt $(date -r SERVER +%s) ]; then
+    rm -f SERVER_HASH
+  fi
+fi
+
+
 if [ ! -f BACKING_FILE ]; then
   DEV_ID=$(cat DEV_ID)
   echo "/var/tmp/WiFiMSC.$DEV_ID" >BACKING_FILE
