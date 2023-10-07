@@ -32,9 +32,17 @@ struct ipc_msg msg;
 // Set local disk sector configuration below.
 #include "wifimsc_disk_config.h"
 
-#define README_CONTENTS "This is tinyusb's MassStorage Class demo.\r\n\r\nIf you find any bugs or get any questions, feel free to file an\r\nissue at github.com/hathach/tinyusb"
+#if defined CONFIG_IDF_TARGET_ESP32S2
+short ledPins[] = { 15, 16, 17, 18, 21, 33, 34 };
+#elif defined CONFIG_IDF_TARGET_ESP32S3
+// NB. GPIO 26 and 33 to 37 not available on S3 with Octal SPI.
+short ledPins[] = { 47, 15, 16, 17, 18, 21, 43 };
+#else
+#error Please configure LED pin array
+#endif
 
 static int32_t onWrite(uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_t bufsize){
+  digitalWrite(ledPins[4], HIGH);
   //HWSerial.printf("%%MSC-WRITE lba=%u offset=%u bufsize=%u\r\n", lba, offset, bufsize);
   assert(!offset);
   assert(!(bufsize%DISK_SECTOR_SIZE));
@@ -66,10 +74,12 @@ static int32_t onWrite(uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_t 
   for (int l = bufsize/DISK_SECTOR_SIZE - 1; l >= 0; l--)
     put_cache_block(lba + l, buffer + DISK_SECTOR_SIZE * l);
 
+  digitalWrite(ledPins[4], LOW);
   return bufsize;
 }
 
 static int32_t onRead(uint32_t lba, uint32_t offset, void* buffer, uint32_t bufsize){
+  digitalWrite(ledPins[4], HIGH);
   //HWSerial.printf("%%MSC-READ lba=%u offset=%u bufsize=%u\r\n", lba, offset, bufsize);
   assert(!offset);
   assert(!(bufsize%DISK_SECTOR_SIZE));
@@ -114,6 +124,7 @@ static int32_t onRead(uint32_t lba, uint32_t offset, void* buffer, uint32_t bufs
       if (!get_cache_block(lba + l))
         put_cache_block(lba + l, buffer + DISK_SECTOR_SIZE * l);
 
+  digitalWrite(ledPins[4], LOW);
   return bufsize;
 }
 
@@ -127,9 +138,11 @@ static void usbEventCallback(void* arg, esp_event_base_t event_base, int32_t eve
     arduino_usb_event_data_t * data = (arduino_usb_event_data_t*)event_data;
     switch (event_id){
       case ARDUINO_USB_STARTED_EVENT:
+        digitalWrite(ledPins[4], LOW);
         HWSerial.println("%USB PLUGGED");
         break;
       case ARDUINO_USB_STOPPED_EVENT:
+        digitalWrite(ledPins[4], HIGH);
         HWSerial.println("%USB UNPLUGGED");
         break;
       case ARDUINO_USB_SUSPEND_EVENT:
@@ -167,7 +180,14 @@ void init_comms_and_sync(void)
   //HWSerial.printf("%%IPC MSC Wait for SSH signal finish %d\r\n", ipc_num++); ipc_num++;
 }
 
-void setup() {
+void setup()
+{
+  for (short pin = 0; pin < sizeof ledPins / sizeof ledPins[0]; pin++)
+  {
+    digitalWrite(ledPins[pin], HIGH);
+    pinMode(ledPins[pin], OUTPUT);
+  }
+
   HWSerial.begin(115200);
   HWSerial.setDebugOutput(true);
 
@@ -193,6 +213,7 @@ void setup() {
   MSC.begin(DISK_SECTOR_COUNT, DISK_SECTOR_SIZE);
   USBSerial.begin();
   USB.begin();
+  digitalWrite(ledPins[2], LOW);
 }
 
 void loop()

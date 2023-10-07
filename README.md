@@ -6,12 +6,12 @@ Summary
 This is firmware that can be configured and loaded onto an Espressif
 ESP32-S2 or ESP32-S3 to create a USB mass storage device, whose data
 is accessed over WiFi via SSH using key authentication.
-It is based on the LibSSH-ESP32 library.
+It is based on the [LibSSH-ESP32 library](https://www.ewan.cc/?q=node/157).
 
 Author
 ------
-Created by Ewan Parker https://www.ewan.cc/ on 16th September 2023,
-and initially released on 19th September 2023.
+Created by Ewan Parker [https://www.ewan.cc/](https://www.ewan.cc/?q=node/160)
+on 16th September 2023, and initially released on 19th September 2023.
 
 Use Cases
 ---------

@@ -28,6 +28,8 @@ const unsigned int configSTACK = 31200;
 
 volatile bool wifiPhyConnected;
 
+extern short ledPins[];
+
 // Timing and timeout configuration.
 #define WIFI_TIMEOUT_S 10
 #define NET_WAIT_MS 100
@@ -398,6 +400,7 @@ int ex_main(){
     //printf("%%IPC SSH Signalling MSC\n");
     char dummy;
     xMessageBufferSend(ssh_to_usb, &dummy, 1, portMAX_DELAY);
+    digitalWrite(ledPins[3], LOW);
 
     struct ipc_msg msg;
     int ipc_num = 1;
@@ -428,10 +431,12 @@ int ex_main(){
       }
       else if (msg.host_cmd == USB_READ)
       {
+        digitalWrite(ledPins[5], HIGH);
         cmdlen = snprintf(cmd, sizeof cmd, "dd if=%s bs=%d skip=%lld count=%d of=/dev/shm/$(basename %s).buf 2>/dev/null; cat /dev/shm/$(basename %s).buf", BACKING_FILE, msg.secsz, 0LL + msg.lba, msg.dlen/msg.secsz, BACKING_FILE, BACKING_FILE);
       }
       else if (msg.host_cmd == USB_WRITE)
       {
+        digitalWrite(ledPins[6], HIGH);
         cmdlen = snprintf(cmd, sizeof cmd, "dd of=%s conv=notrunc bs=%d seek=%lld count=%d 2>/dev/null", BACKING_FILE, msg.secsz, 0LL + msg.lba, msg.dlen/msg.secsz);
       }
       else strcpy(cmd, "false");
@@ -471,6 +476,8 @@ int ex_main(){
       ssh_channel_send_eof(channel);
       ssh_channel_close(channel);
       ssh_channel_free(channel);
+      if (msg.host_cmd == USB_READ) digitalWrite(ledPins[5], LOW);
+      else if (msg.host_cmd == USB_WRITE) digitalWrite(ledPins[6], LOW);
     } // while (1)
 
     ssh_disconnect(session);
@@ -563,6 +570,7 @@ void controlTask(void *pvParameter)
     "%%CFG Mounted SPIFFS used=%d total=%d\r\n", SPIFFS.usedBytes(),
     SPIFFS.totalBytes());
 
+  digitalWrite(ledPins[1], LOW);
   wifiPhyConnected = false;
   WiFi.disconnect(true);
   WiFi.mode(WIFI_MODE_STA);
@@ -614,6 +622,7 @@ void controlTask(void *pvParameter)
         newDevState(STATE_OTA_COMPLETE);
         break;
       case STATE_OTA_COMPLETE :
+        digitalWrite(ledPins[2], LOW);
         aborting = false;
         // Initialize the Arduino library.
         libssh_begin();
@@ -621,6 +630,7 @@ void controlTask(void *pvParameter)
         // Run the main code.
         {
           int ex_rc = ex_main();
+          digitalWrite(ledPins[0], LOW);
           HWSerial.printf("\n%%MSC Execution completed prematurely: rc=%d\r\n", ex_rc);
         }
         while (1) vTaskDelay(60000 / portTICK_PERIOD_MS);
