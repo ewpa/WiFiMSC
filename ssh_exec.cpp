@@ -13,6 +13,8 @@ const unsigned int configSTACK = 31200;
 
 #include "Arduino.h"
 #include "IPv6Address.h"
+#include <arpa/inet.h>
+#include "esp_netif.h"
 #include "WiFi.h"
 #include "ipc.h"
 // Include the Arduino library.
@@ -497,39 +499,20 @@ failed:
 
 #define newDevState(s) (devState = s)
 
-esp_err_t event_cb(void *ctx, system_event_t *event)
+void wifi_event_cb(void *args, esp_event_base_t base, int32_t id, void* event_data)
 {
-  switch(event->event_id)
+  switch(id)
   {
-    case SYSTEM_EVENT_STA_START:
-      //#if ESP_IDF_VERSION_MAJOR < 4
-      //WiFi.setHostname("libssh_esp32");
-      //#endif
+    case WIFI_EVENT_STA_START:
       HWSerial.print("%NET WiFi enabled with SSID=");
       HWSerial.println((char*)SSID);
       break;
-    case SYSTEM_EVENT_STA_CONNECTED:
+    case WIFI_EVENT_STA_CONNECTED:
       WiFi.enableIpV6();
       wifiPhyConnected = true;
       if (devState < STATE_PHY_CONNECTED) newDevState(STATE_PHY_CONNECTED);
       break;
-    case SYSTEM_EVENT_GOT_IP6:
-      if (event->event_info.got_ip6.ip6_info.ip.addr[0] != htons(0xFE80)
-      && !gotIp6Addr)
-      {
-        gotIp6Addr = true;
-      }
-      HWSerial.print("%NET IPv6 Address: ");
-      HWSerial.println(IPv6Address(event->event_info.got_ip6.ip6_info.ip.addr));
-      break;
-    case SYSTEM_EVENT_STA_GOT_IP:
-      gotIpAddr = true;
-      HWSerial.print("%NET IPv4 Address: ");
-      HWSerial.println(IPAddress(event->event_info.got_ip.ip_info.ip.addr));
-      break;
-    case SYSTEM_EVENT_STA_LOST_IP:
-      //gotIpAddr = false;
-    case SYSTEM_EVENT_STA_DISCONNECTED:
+    case WIFI_EVENT_STA_DISCONNECTED:
       if (devState < STATE_WAIT_IPADDR) newDevState(STATE_NEW);
       if (wifiPhyConnected)
       {
@@ -540,7 +523,35 @@ esp_err_t event_cb(void *ctx, system_event_t *event)
     default:
       break;
   }
-  return ESP_OK;
+}
+
+void ip_event_cb
+(void *args, esp_event_base_t base, int32_t id, void* event_data)
+{
+  switch(id)
+  {
+    case IP_EVENT_GOT_IP6:
+      {
+        ip_event_got_ip6_t* event = (ip_event_got_ip6_t*) event_data;
+        if (event->ip6_info.ip.addr[0] != htons(0xFE80))
+          gotIp6Addr = true;
+        HWSerial.print("%NET IPv6 Address: ");
+        HWSerial.println(IPv6Address(event->ip6_info.ip.addr));
+      }
+      break;
+    case IP_EVENT_STA_GOT_IP:
+      gotIpAddr = true;
+      {
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        HWSerial.print("%NET IPv4 Address: ");
+        HWSerial.println(IPAddress(event->ip_info.ip.addr));
+      }
+      break;
+    case IP_EVENT_STA_LOST_IP:
+      //gotIpAddr = false;
+    default:
+      break;
+  }
 }
 
 void controlTask(void *pvParameter)
@@ -631,7 +642,8 @@ void controlTask(void *pvParameter)
         {
           int ex_rc = ex_main();
           digitalWrite(ledPins[0], LOW);
-          HWSerial.printf("\n%%MSC Execution completed prematurely: rc=%d\r\n", ex_rc);
+          HWSerial.printf
+            ("\n%%MSC Execution completed prematurely: rc=%d\r\n", ex_rc);
         }
         while (1) vTaskDelay(60000 / portTICK_PERIOD_MS);
         if (!aborting)
@@ -660,24 +672,17 @@ void ssh_exec_setup()
   // Use the expected blocking I/O behavior.
   setvbuf(stdin, NULL, _IONBF, 0);
   setvbuf(stdout, NULL, _IONBF, 0);
-  #if ESP_IDF_VERSION_MAJOR >= 4
   HWSerial.begin(115200);
   uart_driver_install
     ((uart_port_t)CONFIG_ESP_CONSOLE_UART_NUM, 256, 0, 0, NULL, 0);
   esp_vfs_dev_uart_use_driver(CONFIG_ESP_CONSOLE_UART_NUM);
-  #else
-  uart_driver_install((uart_port_t)CONFIG_CONSOLE_UART_NUM, 256, 0, 0, NULL, 0);
-  esp_vfs_dev_uart_use_driver(CONFIG_CONSOLE_UART_NUM);
-  HWSerial.begin(115200);
-  #endif
 
-  #if ESP_IDF_VERSION_MAJOR >= 4
-  //WiFi.setHostname("libssh_esp32");
   esp_netif_init();
-  #else
-  tcpip_adapter_init();
-  #endif
-  esp_event_loop_init(event_cb, NULL);
+  esp_event_loop_create_default();
+  esp_event_handler_instance_register
+    (WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_cb, NULL, NULL);
+  esp_event_handler_instance_register
+    (IP_EVENT, ESP_EVENT_ANY_ID, ip_event_cb, NULL, NULL);
 
   // Stack size needs to be larger, so continue in a new task.
   xTaskCreatePinnedToCore(controlTask, "ctl", configSTACK, NULL,
