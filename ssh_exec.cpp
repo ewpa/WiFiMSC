@@ -2,7 +2,7 @@
 // USB Mass Storage, backed by sparse file on remote SSH host.
 // SSH channel exec routines.
 //
-// Copyright (C) 2016–2023 Ewan Parker.
+// Copyright (C) 2016–2025 Ewan Parker.
 // https://www.ewan.cc
 
 // Set local WiFi credentials below.
@@ -12,7 +12,6 @@
 const unsigned int configSTACK = 31200;
 
 #include "Arduino.h"
-#include "IPv6Address.h"
 #include <arpa/inet.h>
 #include "esp_netif.h"
 #include "WiFi.h"
@@ -508,7 +507,11 @@ void wifi_event_cb(void *args, esp_event_base_t base, int32_t id, void* event_da
       HWSerial.println((char*)SSID);
       break;
     case WIFI_EVENT_STA_CONNECTED:
+      #if ESP_IDF_VERSION_MAJOR < 5
       WiFi.enableIpV6();
+      #else
+      WiFi.enableIPv6();
+      #endif
       wifiPhyConnected = true;
       if (devState < STATE_PHY_CONNECTED) newDevState(STATE_PHY_CONNECTED);
       break;
@@ -536,7 +539,12 @@ void ip_event_cb
         if (event->ip6_info.ip.addr[0] != htons(0xFE80))
           gotIp6Addr = true;
         HWSerial.print("%NET IPv6 Address: ");
+        #if ESP_IDF_VERSION_MAJOR < 5
         HWSerial.println(IPv6Address(event->ip6_info.ip.addr));
+        #else
+        HWSerial.println(IPAddress(IPv6,
+          (const uint8_t*)&event->ip6_info.ip.addr).toString().c_str());
+        #endif
       }
       break;
     case IP_EVENT_STA_GOT_IP:
